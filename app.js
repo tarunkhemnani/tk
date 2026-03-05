@@ -52,7 +52,7 @@
 
 // ---- Existing app code (unchanged, except where noted) ----
 (() => {
-  const API_BASE = "https://shahulbreaker.in/api/storedata.php?user=tarun&data=";
+  
   const MAX = 4; // <- changed from 6 to 4 (passcode length + rotating buffer size)
   let code = "";
 
