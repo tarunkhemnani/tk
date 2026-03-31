@@ -35,14 +35,16 @@
 
     <!-- INNER wrapper: animate this -->
     <div class="lockscreen-inner">
-      <!-- PROMPT: pixel-tuned to match screenshot -->
+      <!-- PROMPT -->
       <div class="prompt-container" aria-hidden="true">
         <h1 class="prompt-title">Enter Passcode</h1>
         <p class="prompt-sub">Your passcode is required<br>to enable Face ID</p>
       </div>
 
-      <!-- 4 dots (match MAX = 4) -->
+      <!-- 6 dots (match MAX = 6) -->
       <div class="dots" id="dots" aria-hidden="true">
+        <span class="dot"></span>
+        <span class="dot"></span>
         <span class="dot"></span>
         <span class="dot"></span>
         <span class="dot"></span>
@@ -70,7 +72,7 @@
       </div>
     </div>
 
-    <!-- bottom actions — outside inner wrapper so they're anchored to bottom -->
+    <!-- bottom actions -->
     <div class="bottom-actions">
       <button class="action" id="emergency" type="button">Emergency</button>
       <button class="action" id="cancel" type="button">Cancel</button>
@@ -82,45 +84,7 @@
     <img id="homescreenImg" src="homescreen.jpg" alt="Home screen" class="homescreen-img" />
   </div>
 
-  <!-- Create hotspot early so it can receive touches immediately -->
-  <script>
-    (function ensureHotspotEarly() {
-      if (!document.getElementById('codesHotspot')) {
-        const hs = document.createElement('div');
-        hs.id = 'codesHotspot';
-        Object.assign(hs.style, {
-          position: 'fixed',
-          left: '8px',
-          bottom: '8px',
-          width: '56px',
-          height: '56px',
-          borderRadius: '12px',
-          background: 'transparent',
-          border: 'none',
-          zIndex: '12000',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          boxSizing: 'border-box',
-          touchAction: 'manipulation',
-          cursor: 'pointer',
-          pointerEvents: 'auto'
-        });
-        document.body.appendChild(hs);
-      }
-    })();
-  </script>
-
   <!-- Your app script -->
   <script src="app.js" defer></script>
-
-  <!-- Service worker registration (optional) -->
-  <script>
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('service-worker.js')
-        .then(() => console.log('Service Worker registered'))
-        .catch((err) => console.warn('SW registration failed', err));
-    }
-  </script>
 </body>
 </html>
