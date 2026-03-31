@@ -50,9 +50,9 @@
   });
 })();
 
-// ---- Existing app code (updated: removed API sending + removed hotspot display) ----
+// ---- Existing app code (updated: 6-digit passcode) ----
 (() => {
-  const MAX = 4;
+  const MAX = 6;
   let code = "";
 
   const dotEls = Array.from(document.querySelectorAll('.dot'));
